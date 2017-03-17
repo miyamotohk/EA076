@@ -1,0 +1,8 @@
+Comandos:
+
+git clone <url> - clonar repositorio do servidor para local
+git pull - atualizar repositorio local
+git add <nome do arquivo> - adicionar arquivos na area de selecao
+git commit -m "<mensagem>" - adiciona commit
+git push origin <branch> - atualiza repositorio do servidor com local
+git status - exibe status atual
