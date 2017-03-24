@@ -145,6 +145,3 @@ void loop() {
   //sleep_mode();
   //sleep_disable();
 }
-
-//LM234
-//inputcompare
