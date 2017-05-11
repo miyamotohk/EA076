@@ -1,7 +1,13 @@
 /* EA076 - Projeto 2: Datalogger
  * Henrique e Daniel - Turma D
  *
- * Codigo parcialmente baseado no codigo de Kernel de tempo real e comunicacao UART de Tiago Tavares
+ * Esse e o codigo para um sistema datalogger que realiza usa um sensor de temperatura para fazer a leitura da temperatura do ambiente.
+ * O sistema utiliza comunicacao RS232 (serial) para interface com o computador, utiliza comunicacao I2C para comunicacao comm uma memoria EEPROM (AT24C16), 
+ * onde os dados sao gravados e dispoe de um sistema matriciail, que tambem pode controlar o sistema.
+ * E possivel solicitar medicoes e gravacoes de apenas um dado atraves do computador ou do teclado matricial. Ou entao o sistema dispoe de modo de medicao automatica
+ * controlado pelo teclado matricial, que realiza medicoes com frequencia definida.
+ * 
+ * Codigo parcialmente baseado no codigo de Kernel de tempo real e comunicacao UART de Tiago Tavares.
  * 
  */
 
@@ -10,7 +16,7 @@
 #include <Wire.h>
 #include <TimerOne.h>
 
-//Definicoes
+//Definicoes de pinos e tamanho maximo do buffer
 #define LM35 A0
 #define C1 2
 #define C2 3
@@ -20,19 +26,19 @@
 #define L3 7
 #define L4 8
 #define LED 10
-#define TAM_MAX_BUFFER 15
+#define TAM_MAX_BUFFER 25
 
-//Vetores de linhas e colunas
+//Vetores de linhas e colunas do teclado matricial
 int linha[4] = {L1,L2,L3,L4};
 int coluna[3] = {C1,C2,C3};
 
-//Inicializacao da matriz do teclado
+//Matriz de teclas do teclado matricial
 char teclado[4][3] = {{'1','2','3'},{'4','5','6'},{'7','8','9'},{'*','0','#'}};
 
 //Endereco da EEPROM
 const byte END_EEPROM = 0x50;
 
-//buffer_serial de dados
+//Tipo buffer (usado para comunicacao serial e com teclado matricial)
 typedef struct {
   char data[TAM_MAX_BUFFER];
   unsigned int tam_buffer;
@@ -41,22 +47,29 @@ typedef struct {
 buffer buffer_serial;
 buffer buffer_teclado;
 
-//Variaveis globais para controle de processos da interrupcao
+//Buffer de saida (escrita na serial)
+char saida_buffer[15];
+
+//Variaveis globais para controle de processos
 volatile int flag_leu_string = 0;
 volatile int flag_deboucing = 0;
 volatile int flag_leu_teclado = 0;
+volatile int flag_medicao_automatica = 0;
+volatile int flag_escrita = 0;
 volatile int tempo_deboucing;
+volatile unsigned long int contador = 0;
 
 //Rotina para comparacao de strings. Retorna 1 se sao iguais e 0 caso contrario.
 int compara_string(char *string1, char *string2, int tam) {
   int i;
-  for (i=0; i<tam; i++) {
+  for (i=0; i<tam; i++){
     if (string1[i] != string2[i]) return 0;
     if (string1[i] == '\0') return 1;
   }
   return 1;
 }
 
+//FUNCOES DE BUFFER
 //Limpa o buffer serial
 void limpa_Sbuffer() {
   buffer_serial.tam_buffer = 0;
@@ -78,7 +91,6 @@ int insere_Sbuffer(char c_in) {
 
 //Adiciona caractere ao buffer teclado
 int insere_Tbuffer(char c_in) {
-  Serial.println(c_in); //apagar depois <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
   if (c_in == '*')
     flag_leu_teclado = 1;
   if (buffer_teclado.tam_buffer < TAM_MAX_BUFFER) {
@@ -88,11 +100,7 @@ int insere_Tbuffer(char c_in) {
   return 0;
 }
 
-//Leitura da temperatura
-uint8_t le_temperatura(){
-   return (float(analogRead(A0))*5/(1023))/0.01; //Converte o valor da leitura para o valor de temperatura em Celsius
-}
-
+//FUNCOES DE MEMORIA
 //Escrita de um byte da memoria
 void escreve_byte(byte end_eeprom, unsigned end_mem, byte dado){
   byte aux = end_eeprom | ((end_mem >> 8) & 0x07);
@@ -118,6 +126,24 @@ int le_byte(byte end_eeprom, unsigned end_mem){
   return dado;
 }
 
+//FUNCOES DE LEITURA DE DADOS DO SENSOR
+//Leitura da temperatura
+uint8_t le_temperatura(){
+   return (float(analogRead(A0))*5/(1023))/0.01; //Converte o valor da leitura para o valor de temperatura em Celsius
+}
+
+//Realiza uma medicao e grava o valor na memoria
+void grava_medicao(){
+    int N = le_byte(END_EEPROM, 0x00);
+    int dado = le_temperatura();
+    escreve_byte(END_EEPROM, (N+1), byte(dado));
+    N++;
+    escreve_byte(END_EEPROM, 0x00, byte(N));
+    sprintf(saida_buffer, "Dado gravado!\n");
+    flag_escrita = 1;
+}
+
+//FUNCOES DO TECLADO MATRICIAL
 //Funcao de varredura do teclado matricial
 char varredura(){
   int i, j;
@@ -136,8 +162,7 @@ char varredura(){
   }
 }
 
-//Rotinas de interrupcao
-
+//ROTINAS DE INTERRUPCAO
 //RSI de evento da UART
 void serialEvent() {
   char c;
@@ -155,6 +180,9 @@ void serialEvent() {
 
 //Interrupcao periodica
 void RSI_timer(){
+  if(flag_medicao_automatica == 1) //Se a medicao automatica estiver ativa, incrementa contador
+    contador ++;
+  
   if(flag_deboucing == 0){ //Nao estou em deboucing
     char c = varredura();
     //Verifica se c e um caractere valido
@@ -187,20 +215,22 @@ void setup() {
   Timer1.initialize(1000); //Configura timer com periodo 1ms (1kHz)
   Timer1.attachInterrupt(RSI_timer); //Associa a interrupcao periodica a funcao RSI_timer
   
-  limpa_Sbuffer(); //Limpa buffer
+  limpa_Sbuffer(); //Limpa buffer serial
+  limpa_Tbuffer(); //Limpa buffer do teclado
   
   //Inicia flags
   flag_leu_string = 0;
   flag_deboucing = 0;
+  flag_leu_teclado = 0;
+  flag_medicao_automatica = 0;
+  flag_escrita = 0;
   
-  delay(500);
+  delay(500); //Delay para inicio da comunicacao serial <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
   Serial.begin(9600); //Inicia comunicacao serial
   Wire.begin(); //Inicia comunicacao I2C com EEPROM
 }
 
 void loop() {
-  char saida_buffer[15];
-  int flag_escrita = 0;
   
   if (flag_leu_string == 1) {
     if (compara_string(buffer_serial.data, "PING", 4) ) {
@@ -209,7 +239,7 @@ void loop() {
     }
 
     if (compara_string(buffer_serial.data, "ID", 2) ) {
-      sprintf(saida_buffer, "NOSSO DATALOGGER\n");
+      sprintf(saida_buffer, "INTO THE WILD DATALOGGER\n");
       flag_escrita = 1;
     }
     
@@ -228,13 +258,8 @@ void loop() {
       flag_escrita = 1;
     }
     if (compara_string(buffer_serial.data, "RECORD", 6) ) {
-      int N = le_byte(END_EEPROM, 0x00);
-      int dado = le_temperatura();
-      escreve_byte(END_EEPROM, (N+1), byte(dado));
-      N++;
-      escreve_byte(END_EEPROM, 0x00, byte(N));
-      sprintf(saida_buffer, "Dado gravado!\n");
-      flag_escrita = 1;
+      //Realiza uma medicao e grava o valor na memoria
+      grava_medicao();
     }
     if (compara_string(buffer_serial.data, "GET", 3) ) {
       int N=0;
@@ -249,6 +274,7 @@ void loop() {
   
   if(flag_leu_teclado == 1){
     if (compara_string(buffer_teclado.data, "#1*", 3) ) {
+      //Pisca LED
       for(int i=0; i<6; i++){
         if(i%2){
           digitalWrite(LED,HIGH);
@@ -262,35 +288,38 @@ void loop() {
       }
     }
     if (compara_string(buffer_teclado.data, "#2*", 3) ) {
-      int N = le_byte(END_EEPROM, 0x00);
-      int dado = le_temperatura();
-      escreve_byte(END_EEPROM, (N+1), byte(dado));
-      N++;
-      escreve_byte(END_EEPROM, 0x00, byte(N));
-      sprintf(saida_buffer, "Dado gravado!\n");
-      flag_escrita = 1;
+      //Realiza uma medicao e grava o valor na memoria
+      grava_medicao();
     }
     if (compara_string(buffer_teclado.data, "#3*", 3) ) {
-      Serial.println("teste3");
+      flag_medicao_automatica = 1;
+      sprintf(saida_buffer, "Ativa medicao automatica\n");
+      flag_escrita = 1;
     }
     if (compara_string(buffer_teclado.data, "#4*", 3) ) {
-      Serial.println("teste4");
+      flag_medicao_automatica = 0;
+      sprintf(saida_buffer, "Desativa medicao automatica\n");
+      flag_escrita = 1;    
     }
-
+    
     limpa_Tbuffer();
     flag_leu_teclado = 0;
   }
   
-  /* Posso construir uma dessas estruturas if(flag) para cada funcionalidade
-   *  do sistema. Nesta a seguir, flag_escrita e habilitada sempre que alguma outra
-   *  funcionalidade criou uma requisicao por escrever o conteudo do buffer na
-   *  saida UART.
-   */
+  
+  //Estruturas if(flag) para diferentes funcionalidades do sistema
    
   if (flag_escrita == 1) {
     Serial.write(saida_buffer);
     limpa_Sbuffer();
     flag_escrita = 0;
+  }
+  
+  if (flag_medicao_automatica == 1){
+    if(contador > 5000){ //Se contador > 5s
+      grava_medicao();
+      contador = 0;
+    }
   }
 
 }
