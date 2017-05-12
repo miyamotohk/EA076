@@ -44,6 +44,7 @@ typedef struct {
   unsigned int tam_buffer;
 } buffer;
 
+//Variaveis do tipo buffer
 buffer buffer_serial;
 buffer buffer_teclado;
 
@@ -104,24 +105,25 @@ int insere_Tbuffer(char c_in) {
 //Escrita de um byte da memoria
 void escreve_byte(byte end_eeprom, unsigned end_mem, byte dado){
   byte aux = end_eeprom | ((end_mem >> 8) & 0x07);
-  Wire.beginTransmission(aux);
-  Wire.write(int(end_mem));
-  Wire.write(dado);
-  Wire.endTransmission();
+  
+  Wire.beginTransmission(aux); //Inicia transmissao
+  Wire.write(int(end_mem)); //Envia endereco de memoria
+  Wire.write(dado); //Envia dado a ser escrito
+  Wire.endTransmission(); //Fim da transmissao
   delay(100);
 }
 
 //Leitura de um byte da memoria
 int le_byte(byte end_eeprom, unsigned end_mem){
   byte dado = -1;
-  
   byte aux = end_eeprom | ((end_mem >> 8) & 0x07);
-  Wire.beginTransmission(aux);
-  Wire.write(int(end_mem));
-  Wire.endTransmission();
-  Wire.requestFrom(int(aux),1);
+  
+  Wire.beginTransmission(aux); //Inicia transmissao
+  Wire.write(int(end_mem)); //Envia endereco de memoria
+  Wire.endTransmission(); //Fim da transmissao
+  Wire.requestFrom(int(aux),1); //Requisita dados
   if(Wire.available())
-    dado = Wire.read();
+    dado = Wire.read(); //Leitura do dado
   delay(100);
   return dado;
 }
@@ -134,12 +136,12 @@ uint8_t le_temperatura(){
 
 //Realiza uma medicao e grava o valor na memoria
 void grava_medicao(){
-    int N = le_byte(END_EEPROM, 0x00);
-    int dado = le_temperatura();
-    escreve_byte(END_EEPROM, (N+1), byte(dado));
-    N++;
-    escreve_byte(END_EEPROM, 0x00, byte(N));
-    sprintf(saida_buffer, "Dado gravado!\n");
+    int N = le_byte(END_EEPROM, 0x00); //Le status da memoria (valor de N)
+    int dado = le_temperatura(); //Le dado (valor do sensor)
+    escreve_byte(END_EEPROM, (N+1), byte(dado)); //Escreve dado na posicao de memoria N+1
+    N++; //Incrementa N
+    escreve_byte(END_EEPROM, 0x00, byte(N)); //Atualiza valor de N na memoria
+    sprintf(saida_buffer, "Dado gravado!\n"); //Escreve na serial
     flag_escrita = 1;
 }
 
@@ -148,17 +150,19 @@ void grava_medicao(){
 char varredura(){
   int i, j;
   for(i=0; i<4; i++){
+    //Coloca todas as linhas em alto
     digitalWrite(linha[0], HIGH);
     digitalWrite(linha[1], HIGH);
     digitalWrite(linha[2], HIGH);
     digitalWrite(linha[3], HIGH);
+    //Coloca a i-esima linha em baixo
     digitalWrite(linha[i], LOW);
     for(j=0; j<3; j++){
-      if(digitalRead(coluna[j]) == LOW){
-        return teclado[i][j];
+      if(digitalRead(coluna[j]) == LOW){ //Se a leitura da j-esima coluna retornar baixo
+        return teclado[i][j]; //Retorna valor (i,j) do teclado
       }
     }
-    digitalWrite(linha[i], HIGH);
+    digitalWrite(linha[i], HIGH); //Retorna a i-esima linha para alto
   }
 }
 
@@ -168,11 +172,11 @@ void serialEvent() {
   char c;
   while (Serial.available()) {
     c = Serial.read();
-    if (c=='\n') {
-      insere_Sbuffer('\0'); // Se recebeu um fim de linha, coloca um terminador de string no buffer
+    if (c=='\n') { //Se a string terminou, colocar terminador de string no buffer
+      insere_Sbuffer('\0');
       flag_leu_string = 1;
     }
-    else {
+    else { //Se a string ainda nao terminou, insere caractere no buffer
      insere_Sbuffer(c);
     }
   }
@@ -187,15 +191,15 @@ void RSI_timer(){
     char c = varredura();
     //Verifica se c e um caractere valido
     if((c=='0')||(c=='1')||(c=='2')||(c=='3')||(c=='4')||(c=='5')||(c=='6')||(c=='7')||(c=='8')||(c=='9')||(c=='*')||(c=='#')){
-      insere_Tbuffer(c);
-      flag_deboucing = 1;
+      insere_Tbuffer(c); //Insere caratere no buffer
+      flag_deboucing = 1; //Ativa deboucing
       tempo_deboucing = 500;
     }
   }
   else{ //Estou em deboucing
-    tempo_deboucing--;
+    tempo_deboucing--; //Decrementa tempo de deboucing
     if(tempo_deboucing == 0)
-      flag_deboucing = 0;
+      flag_deboucing = 0; //Desativa deboucing
   }
   
 }
@@ -225,47 +229,47 @@ void setup() {
   flag_medicao_automatica = 0;
   flag_escrita = 0;
   
-  delay(500); //Delay para inicio da comunicacao serial <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+  delay(500); //Delay para inicio da comunicacao serial
   Serial.begin(9600); //Inicia comunicacao serial
   Wire.begin(); //Inicia comunicacao I2C com EEPROM
 }
 
 void loop() {
   
-  if (flag_leu_string == 1) {
-    if (compara_string(buffer_serial.data, "PING", 4) ) {
-      sprintf(saida_buffer, "PONG\n");
+  if (flag_leu_string == 1) { //Se uma string foi enviada pela serial
+  
+    if (compara_string(buffer_serial.data, "PING", 4) ) { //Se recebeu mensagem "PING"
+      sprintf(saida_buffer, "PONG\n"); //Responde "PONG"
       flag_escrita = 1;
     }
 
-    if (compara_string(buffer_serial.data, "ID", 2) ) {
-      sprintf(saida_buffer, "INTO THE WILD DATALOGGER\n");
+    if (compara_string(buffer_serial.data, "ID", 2) ) { //Se recebeu mensagem "ID"
+      sprintf(saida_buffer, "INTO THE WILD DATALOGGER\n"); //Responde com nome do datalogger
       flag_escrita = 1;
     }
     
-    if (compara_string(buffer_serial.data, "MEASURE", 7) ) {
-      sprintf(saida_buffer, "%u\n", le_temperatura());
+    if (compara_string(buffer_serial.data, "MEASURE", 7) ) { //Se recebeu mensagem "MEASURE"
+      sprintf(saida_buffer, "%u\n", le_temperatura()); //Responde com a leitura do sensor
       flag_escrita = 1;
     }
-    if (compara_string(buffer_serial.data, "MEMSTATUS", 9) ) {
+    if (compara_string(buffer_serial.data, "MEMSTATUS", 9) ) { //Se recebeu mensagem "MEMSTATUS"
       int memstatus = le_byte(END_EEPROM, 0x00);
-      sprintf(saida_buffer, "%u\n", memstatus);
+      sprintf(saida_buffer, "%u\n", memstatus); //Responde com o valor de N (posicao 0 de memoria)
       flag_escrita = 1;
     }
-    if (compara_string(buffer_serial.data, "RESET", 5) ) {
-      escreve_byte(END_EEPROM, 0x00, 0x00);
-      sprintf(saida_buffer, "Memoria resetada!\n");
+    if (compara_string(buffer_serial.data, "RESET", 5) ) { //Se recebeu mensageem "RESET"
+      escreve_byte(END_EEPROM, 0x00, 0x00); //Coloca 0 em N (posicao 0 de memoria)
+      sprintf(saida_buffer, "Memoria resetada!\n"); //Responde texto
       flag_escrita = 1;
     }
-    if (compara_string(buffer_serial.data, "RECORD", 6) ) {
-      //Realiza uma medicao e grava o valor na memoria
-      grava_medicao();
+    if (compara_string(buffer_serial.data, "RECORD", 6) ) { //Se recebeu mensagem "RECORD"
+      grava_medicao(); //Realiza uma medicao e grava o valor na memoria
     }
-    if (compara_string(buffer_serial.data, "GET", 3) ) {
-      int N=0;
-      sscanf(buffer_serial.data, "%*s %d", &N);
-      int dado = le_byte(END_EEPROM, N);
-      sprintf(saida_buffer, "%d\n", dado);
+    if (compara_string(buffer_serial.data, "GET", 3) ) { //Se recebeu mensagem "GET"
+      int N = 0;
+      sscanf(buffer_serial.data, "%*s %d", &N); //Le valor de N (posicao de memoria) desejado
+      int dado = le_byte(END_EEPROM, N); //Recupera valor da N-esima posicao de memoria
+      sprintf(saida_buffer, "%d\n", dado); //Responde com tal valor de dado
       flag_escrita = 1;
     }
     
@@ -273,7 +277,7 @@ void loop() {
   }
   
   if(flag_leu_teclado == 1){
-    if (compara_string(buffer_teclado.data, "#1*", 3) ) {
+    if (compara_string(buffer_teclado.data, "#1*", 3) ) { //Se recebeu comando #1*
       //Pisca LED
       for(int i=0; i<6; i++){
         if(i%2){
@@ -287,18 +291,17 @@ void loop() {
       digitalWrite(LED,LOW);
       }
     }
-    if (compara_string(buffer_teclado.data, "#2*", 3) ) {
-      //Realiza uma medicao e grava o valor na memoria
-      grava_medicao();
+    if (compara_string(buffer_teclado.data, "#2*", 3) ) { //Se recebeu comando #2*
+      grava_medicao(); //Realiza uma medicao e grava o valor na memoria
     }
-    if (compara_string(buffer_teclado.data, "#3*", 3) ) {
-      flag_medicao_automatica = 1;
-      sprintf(saida_buffer, "Ativa medicao automatica\n");
+    if (compara_string(buffer_teclado.data, "#3*", 3) ) { //Se recebeu comando #3*
+      flag_medicao_automatica = 1; //Ativa medicao automatica
+      sprintf(saida_buffer, "Ativa medicao automatica\n"); //Escreve na serial
       flag_escrita = 1;
     }
-    if (compara_string(buffer_teclado.data, "#4*", 3) ) {
-      flag_medicao_automatica = 0;
-      sprintf(saida_buffer, "Desativa medicao automatica\n");
+    if (compara_string(buffer_teclado.data, "#4*", 3) ) { //Se recebeu comando #4*
+      flag_medicao_automatica = 0; //Desativa medicao automatica
+      sprintf(saida_buffer, "Desativa medicao automatica\n"); //Escreve na serial
       flag_escrita = 1;    
     }
     
@@ -308,16 +311,18 @@ void loop() {
   
   
   //Estruturas if(flag) para diferentes funcionalidades do sistema
-   
+  
+  //flag_escrita controla a escrita atraves da serial
   if (flag_escrita == 1) {
     Serial.write(saida_buffer);
     limpa_Sbuffer();
     flag_escrita = 0;
   }
   
+  //flag_medicao_automatica controla a medicao automatica do sensor, a cada 5s
   if (flag_medicao_automatica == 1){
     if(contador > 5000){ //Se contador > 5s
-      grava_medicao();
+      grava_medicao(); //Realiza medicao e grava na memoria
       contador = 0;
     }
   }
