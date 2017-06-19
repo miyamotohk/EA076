@@ -77,7 +77,6 @@ void loop()
   GyZ=Wire.read()<<8|Wire.read();  //0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
   
   if(estado == 0){ //Se estiver no estado 0 (modo continuo - variacao linear de frequencia)
-    Serial.println("0");
     int S = AcX + AcY + AcZ;
     if(S > 30000)
       tone(pino_som,f_max);
@@ -90,7 +89,6 @@ void loop()
   }
   
   else{ //Se estiver no estado 1 (modo discreto - cada posicao corresponde a uma nota)
-    Serial.println("1");
     if(AcX < -13000)
       tone(pino_som,NOTE_C4);
     else if(AcZ > 13000)
