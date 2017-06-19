@@ -44,12 +44,14 @@ void setup()
   //Configura pinos de entrada e saida
   pinMode(pino_botao,INPUT);
   pinMode(pino_som,OUTPUT);
+  
   //Inicializacao do acelerometro (I2C)
   Wire.begin();
   Wire.beginTransmission(MPU);
   Wire.write(0x6B); 
   Wire.write(0); 
   Wire.endTransmission(true);
+  
   //Configura interrupcao do botao
   attachInterrupt(0,RSI_botao,RISING);
   //Configura interrupcao periodica
@@ -75,21 +77,20 @@ void loop()
   GyZ=Wire.read()<<8|Wire.read();  //0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
   
   if(estado == 0){ //Se estiver no estado 0 (modo continuo - variacao linear de frequencia)
+    Serial.println("0");
     int S = AcX + AcY + AcZ;
     if(S > 30000)
-      tone(pino_som,494);
-      //tone(pino_som,f_max);
+      tone(pino_som,f_max);
     else if(S < -30000)
-      tone(pino_som,131);
-      //tone(pino_som,f_min);
+      tone(pino_som,f_min);
     else{
-      int f = (0.00605*S) + 312.5;
-      ///unsigend int f = (((f_max - f_min)/(60000))*S) + ((f_max + f_min)/2);
+      unsigned int f = (((f_max - f_min)/(60000))*S) + ((f_max + f_min)/2);
       tone(pino_som,f);
     }
   }
   
   else{ //Se estiver no estado 1 (modo discreto - cada posicao corresponde a uma nota)
+    Serial.println("1");
     if(AcX < -13000)
       tone(pino_som,NOTE_C4);
     else if(AcZ > 13000)
